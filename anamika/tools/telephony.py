@@ -2,13 +2,48 @@
 
 import re
 import json
-from typing import Dict, Any, List
+import time
+from datetime import datetime
+from typing import Dict, Any, List, Union
 from anamika.tools.base import run_command
 
+CALL_TYPE_MAP = {
+    1: "INCOMING",
+    2: "OUTGOING",
+    3: "MISSED",
+    4: "VOICEMAIL",
+    5: "REJECTED",
+    6: "BLOCKED",
+    "1": "INCOMING",
+    "2": "OUTGOING",
+    "3": "MISSED",
+    "4": "VOICEMAIL",
+    "5": "REJECTED",
+    "6": "BLOCKED"
+}
 
-def list_sms(limit: int = 10, offset: int = 0, query: str = "") -> Dict[str, Any]:
+
+def _format_timestamp(ts_val: Any) -> str:
+    """Helper to format epoch timestamps (seconds or milliseconds) into readable string."""
+    try:
+        ts_float = float(ts_val)
+        # If milliseconds
+        if ts_float > 1e11:
+            ts_float /= 1000.0
+        return datetime.fromtimestamp(ts_float).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(ts_val)
+
+
+def list_sms(limit: Union[int, str] = 10, offset: Union[int, str] = 0, query: str = "") -> Dict[str, Any]:
     """List recent SMS messages received on the phone, extract OTP codes, or filter by keyword/sender."""
-    cmd = ["termux-sms-list", "-l", str(limit), "-o", str(offset)]
+    try:
+        lim = max(1, min(50, int(limit)))
+        off = max(0, int(offset))
+    except Exception:
+        lim, off = 10, 0
+
+    cmd = ["termux-sms-list", "-l", str(lim), "-o", str(off)]
     res = run_command(cmd, timeout=15)
     
     if res["success"] and res["stdout"]:
@@ -28,7 +63,7 @@ def list_sms(limit: int = 10, offset: int = 0, query: str = "") -> Dict[str, Any
                 
                 # Try finding potential OTP in body
                 potential_otps = []
-                if "otp" in body.lower() or "code" in body.lower() or "verification" in body.lower() or "password" in body.lower():
+                if any(w in body.lower() for w in ("otp", "code", "verification", "password", "pin", "login")):
                     matches = otp_pattern.findall(body)
                     potential_otps = [m for m in matches if any(char.isdigit() for char in m)]
 
@@ -48,31 +83,103 @@ def list_sms(limit: int = 10, offset: int = 0, query: str = "") -> Dict[str, Any
         except Exception as e:
             return {"status": "error", "message": f"Failed to parse SMS: {e}", "raw": res["stdout"]}
 
-    return {"status": "error", "message": res["stderr"] or "Failed to list SMS"}
+    return {
+        "status": "error",
+        "message": res["stderr"] or "Failed to list SMS. Ensure SMS permission is granted to Termux:API app."
+    }
 
 
 def send_sms(number: str, message: str) -> Dict[str, Any]:
     """Send an SMS message to a specific phone number."""
-    clean_num = number.strip().replace(" ", "").replace("-", "")
-    res = run_command(["termux-sms-send", "-n", clean_num, message], timeout=15)
+    clean_num = str(number).strip().replace(" ", "").replace("-", "")
+    res = run_command(["termux-sms-send", "-n", clean_num, str(message)], timeout=15)
     if res["success"]:
         return {"status": "success", "recipient": clean_num, "message": "SMS sent successfully"}
-    return {"status": "error", "message": res["stderr"]}
+    return {
+        "status": "error",
+        "message": res["stderr"] or "Failed to send SMS. Ensure SMS permission is granted to Termux:API app."
+    }
 
 
-def get_call_logs(limit: int = 10, offset: int = 0) -> Dict[str, Any]:
-    """View recent incoming, outgoing, and missed call logs."""
-    cmd = ["termux-telephony-call-log", "-l", str(limit), "-o", str(offset)]
+def get_call_logs(limit: Union[int, str] = 10, offset: Union[int, str] = 0) -> Dict[str, Any]:
+    """View recent incoming, outgoing, and missed call logs with caller details and timestamps."""
+    try:
+        lim = max(1, min(50, int(limit)))
+        off = max(0, int(offset))
+    except Exception:
+        lim, off = 10, 0
+
+    # 1. Primary Method: termux-telephony-call-log
+    cmd = ["termux-telephony-call-log", "-l", str(lim), "-o", str(off)]
     res = run_command(cmd, timeout=15)
+    
     if res["success"] and res["stdout"]:
         try:
+            raw_calls = json.loads(res["stdout"])
+            if isinstance(raw_calls, list) and len(raw_calls) > 0:
+                formatted_calls = []
+                for c in raw_calls:
+                    raw_type = c.get("type", "")
+                    readable_type = CALL_TYPE_MAP.get(raw_type, str(raw_type))
+                    formatted_calls.append({
+                        "name": c.get("name") or "Unknown / Unsaved",
+                        "phone_number": c.get("phone_number") or c.get("number", ""),
+                        "type": readable_type,
+                        "date": _format_timestamp(c.get("date", "")),
+                        "duration_seconds": c.get("duration", 0)
+                    })
+                return {
+                    "status": "success",
+                    "count": len(formatted_calls),
+                    "calls": formatted_calls
+                }
+            elif isinstance(raw_calls, list) and len(raw_calls) == 0:
+                # Fall through to content query fallback
+                pass
+        except Exception:
+            pass
+
+    # 2. Fallback Method: Direct Android Content Provider Query
+    content_cmd = [
+        "content", "query",
+        "--uri", "content://call_log/calls",
+        "--projection", "number:name:date:duration:type",
+        "--sort", "date DESC"
+    ]
+    res_content = run_command(content_cmd, timeout=10)
+    if res_content["success"] and res_content["stdout"]:
+        lines = res_content["stdout"].splitlines()
+        content_calls = []
+        for line in lines[:lim]:
+            if "Row:" in line:
+                # Row: 0 name=John, number=123, date=1700000000000, duration=45, type=1
+                item = {}
+                for part in line.split(","):
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        item[k.strip().replace("Row: ", "")] = v.strip()
+                
+                raw_type = item.get("type", "1")
+                content_calls.append({
+                    "name": item.get("name") or "Unknown / Unsaved",
+                    "phone_number": item.get("number", ""),
+                    "type": CALL_TYPE_MAP.get(raw_type, "CALL"),
+                    "date": _format_timestamp(item.get("date", "")),
+                    "duration_seconds": int(item.get("duration", 0)) if item.get("duration", "").isdigit() else 0
+                })
+        if content_calls:
             return {
                 "status": "success",
-                "calls": json.loads(res["stdout"])
+                "count": len(content_calls),
+                "calls": content_calls
             }
-        except Exception:
-            return {"raw_output": res["stdout"]}
-    return {"status": "error", "message": res["stderr"]}
+
+    return {
+        "status": "success",
+        "count": 0,
+        "calls": [],
+        "message": "No call logs found. If you have recent calls, please ensure 'Call logs' / 'Phone' permission is granted to Termux:API app in Android Settings."
+    }
 
 
 def list_contacts(query: str = "") -> Dict[str, Any]:
@@ -82,8 +189,8 @@ def list_contacts(query: str = "") -> Dict[str, Any]:
         try:
             contacts = json.loads(res["stdout"])
             if query:
-                q_low = query.lower()
-                contacts = [c for c in contacts if q_low in c.get("name", "").lower() or q_low in c.get("number", "")]
+                q_low = str(query).lower()
+                contacts = [c for c in contacts if q_low in str(c.get("name", "")).lower() or q_low in str(c.get("number", ""))]
             return {
                 "status": "success",
                 "count": len(contacts),
@@ -91,7 +198,10 @@ def list_contacts(query: str = "") -> Dict[str, Any]:
             }
         except Exception:
             return {"raw_output": res["stdout"]}
-    return {"status": "error", "message": res["stderr"]}
+    return {
+        "status": "error",
+        "message": res["stderr"] or "Failed to read contacts. Ensure Contacts permission is granted to Termux:API app."
+    }
 
 
 def get_cell_info() -> Dict[str, Any]:
@@ -102,4 +212,7 @@ def get_cell_info() -> Dict[str, Any]:
             return {"status": "success", "cell_info": json.loads(res["stdout"])}
         except Exception:
             return {"raw_output": res["stdout"]}
-    return {"status": "error", "message": res["stderr"]}
+    return {
+        "status": "error",
+        "message": res["stderr"] or "Failed to read cellular info. (Device might be WiFi-only tablet or SIM not present)."
+    }

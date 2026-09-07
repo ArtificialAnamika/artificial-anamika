@@ -33,7 +33,6 @@ def download_and_install_termux_api_apk():
 
     print(f"\n📥 Downloading Termux:API APK...")
     try:
-        # Try F-Droid first, fallback to GitHub
         try:
             urllib.request.urlretrieve(APK_URL_FDROID, apk_path)
         except Exception:
@@ -43,7 +42,6 @@ def download_and_install_termux_api_apk():
             print(f"✅ Downloaded ({os.path.getsize(apk_path) // 1024} KB).")
             print("🚀 Launching Android Package Installer...")
             
-            # Use termux-open if available
             if shutil.which("termux-open"):
                 run_command(["termux-open", "--view", apk_path])
             else:
@@ -120,8 +118,18 @@ def run_permission_doctor():
         print("      👉 SMS read/send karne ke liye 'SMS' permission chahiye hoti hai.")
         issues_found = True
 
-    # 6. Check Storage Permission
-    print("\n6. Testing Storage Access (/sdcard)...")
+    # 6. Check Call Logs Permission
+    print("\n6. Testing Call Logs / Telephony...")
+    res_calls = run_command(["termux-telephony-call-log", "-l", "1"], timeout=6)
+    if res_calls["success"]:
+        print("   ✅ Call Logs API: Working (Call log permission is accessible)")
+    else:
+        print("   ⚠️ Call Logs API: Not accessible or denied.")
+        print("      👉 'Call logs' aur 'Phone' permissions allow karein.")
+        issues_found = True
+
+    # 7. Check Storage Permission
+    print("\n7. Testing Storage Access (/sdcard)...")
     if os.path.exists("/sdcard") and os.access("/sdcard", os.R_OK):
         print("   ✅ Storage: Working (/sdcard is readable)")
     else:
@@ -136,16 +144,17 @@ def run_permission_doctor():
         print("Android OS me permissions 'Termux:API' APK ko deni hoti hain:")
         print("  1. Camera Permission ➔ Required for Flashlight/Torch & Photos")
         print("  2. SMS Permission    ➔ Required for Reading OTPs & Sending SMS")
-        print("  3. Location          ➔ Required for WiFi & GPS")
-        print("  4. Contacts / Phone  ➔ Required for Contacts & Call logs")
-        print("  5. Battery           ➔ Set to 'Unrestricted' / 'Don't Optimize'")
+        print("  3. Call logs & Phone ➔ Required for Call history")
+        print("  4. Location          ➔ Required for WiFi & GPS")
+        print("  5. Contacts          ➔ Required for Contact searching")
+        print("  6. Battery           ➔ Set to 'Unrestricted' / 'Don't Optimize'")
         print("-----------------------------------------------------------------")
 
         choice = input("\n📱 Kya aap 'Termux:API' ka Android Settings page abhi open karna chahte hain? (y/n): ").strip().lower()
         if choice in ("y", "yes", ""):
             print("🚀 Opening Termux:API App Info screen...")
             open_settings_page("com.termux.api")
-            print("\n👉 Settings me 'Permissions' par tap karke Camera, SMS, Location enable karein.")
+            print("\n👉 Settings me 'Permissions' par tap karke Camera, SMS, Call logs, Location enable karein.")
     elif not issues_found:
         print("🎉 ALL ANDROID PERMISSIONS ARE PROPERLY CONFIGURED & WORKING!")
     print("=" * 65 + "\n")
