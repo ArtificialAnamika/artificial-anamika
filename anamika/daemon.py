@@ -11,6 +11,14 @@ PID_FILE = os.path.expanduser("~/.anamika/daemon.pid")
 LOG_FILE = os.path.expanduser("~/.anamika/daemon.log")
 
 
+def get_app_paths():
+    """Resolves root project directory and main.py path."""
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(pkg_dir)
+    main_py = os.path.join(root_dir, "main.py")
+    return root_dir, main_py
+
+
 def get_running_pid() -> Optional[int]:
     """Returns PID if daemon is currently running, else None."""
     if os.path.exists(PID_FILE):
@@ -56,26 +64,44 @@ def start_daemon(config_path: str = None) -> bool:
     acquire_wake_lock()
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
-    log_fp = open(LOG_FILE, "a", encoding="utf-8")
-    
-    cmd = [sys.executable, "-m", "anamika.cli", "telegram", "--foreground"]
+    root_dir, main_py = get_app_paths()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = root_dir + (":" + env.get("PYTHONPATH", "") if env.get("PYTHONPATH") else "")
+    env["PYTHONUNBUFFERED"] = "1"
+
+    cmd = [sys.executable, main_py, "telegram", "run"]
     if config_path:
         cmd.extend(["-c", config_path])
 
     try:
+        log_fp = open(LOG_FILE, "a", encoding="utf-8")
+        
+        # Start detached background process
         proc = subprocess.Popen(
             cmd,
             stdout=log_fp,
             stderr=log_fp,
             stdin=subprocess.DEVNULL,
-            start_new_session=True
+            start_new_session=True,
+            cwd=root_dir,
+            env=env
         )
         pid = proc.pid
         with open(PID_FILE, "w") as f:
             f.write(str(pid))
 
-        # Give it a moment to initialize
-        time.sleep(1)
+        # Check if process stayed alive after 1 second
+        time.sleep(1.2)
+        try:
+            os.kill(pid, 0)
+            is_alive = True
+        except OSError:
+            is_alive = False
+
+        if not is_alive:
+            print("❌ Daemon failed to start. Showing recent logs:")
+            show_logs(follow=False)
+            return False
 
         print("\n" + "=" * 60)
         print("  🚀 ARTIFICIAL ANAMIKA TELEGRAM DAEMON STARTED!")
@@ -87,6 +113,7 @@ def start_daemon(config_path: str = None) -> bool:
         print(f"  • Stop:   anamika telegram stop")
         print("=" * 60 + "\n")
         return True
+
     except Exception as e:
         print(f"❌ Failed to start daemon: {e}")
         return False
@@ -96,17 +123,26 @@ def stop_daemon() -> bool:
     """Stops the running Telegram daemon gracefully."""
     pid = get_running_pid()
     if not pid:
-        print("ℹ️ Telegram Daemon is not currently running.")
+        # Fallback check for any stray telegram run processes
+        try:
+            subprocess.run(["pkill", "-f", "anamika.*telegram.*run"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        if os.path.exists(PID_FILE):
+            try:
+                os.remove(PID_FILE)
+            except Exception:
+                pass
+        release_wake_lock()
+        print("ℹ️ Telegram Daemon is stopped.")
         return True
 
     print(f"🛑 Stopping Telegram Daemon (PID: {pid})...")
     try:
         os.kill(pid, signal.SIGTERM)
         time.sleep(1)
-        # Verify killed
         try:
             os.kill(pid, 0)
-            # Force kill if still alive
             os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
