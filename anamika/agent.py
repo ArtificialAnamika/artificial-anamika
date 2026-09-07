@@ -12,6 +12,49 @@ from anamika.tools import ToolRegistry, default_registry
 logger = logging.getLogger("anamika.agent")
 
 
+def format_raw_json_fallback(text: str) -> str:
+    """If the LLM output is a raw JSON string or JSON codeblock, converts it to readable cards."""
+    if not text:
+        return text
+
+    clean = text.strip()
+    if clean.startswith("```json") and clean.endswith("```"):
+        clean = clean[7:-3].strip()
+    elif clean.startswith("```") and clean.endswith("```"):
+        clean = clean[3:-3].strip()
+
+    if (clean.startswith("{") and clean.endswith("}")) or (clean.startswith("[") and clean.endswith("]")):
+        try:
+            data = json.loads(clean)
+            if isinstance(data, dict):
+                if "formatted_text" in data and data["formatted_text"]:
+                    return data["formatted_text"]
+                if "messages" in data and isinstance(data["messages"], list):
+                    lines = [f"📩 RECENT SMS MESSAGES (Total: {len(data['messages'])}):", "━" * 38]
+                    for idx, m in enumerate(data["messages"], start=1):
+                        otp = f"\n   🔑 OTP Code: {', '.join(m.get('potential_otps', []))}" if m.get("potential_otps") else ""
+                        lines.append(
+                            f"{idx}. 👤 From: {m.get('sender')}\n"
+                            f"   ⏰ Date: {m.get('date')}{otp}\n"
+                            f"   💬 Message: {m.get('body')}\n"
+                            + "━" * 38
+                        )
+                    return "\n".join(lines)
+                if "calls" in data and isinstance(data["calls"], list):
+                    lines = [f"📞 RECENT CALL LOGS (Total: {len(data['calls'])}):", "━" * 38]
+                    for idx, c in enumerate(data["calls"], start=1):
+                        lines.append(
+                            f"{idx}. 👤 {c.get('name')} ({c.get('phone_number')})\n"
+                            f"   📞 {c.get('type')} | ⏱️ {c.get('duration')}\n"
+                            f"   ⏰ {c.get('date')}\n"
+                            + "━" * 38
+                        )
+                    return "\n".join(lines)
+        except Exception:
+            pass
+    return text
+
+
 class Agent:
     """Autonomous technical AI employee operating over Android / Termux."""
 
@@ -67,7 +110,6 @@ class Agent:
 
         for iteration in range(max_tool_iterations):
             try:
-                # If approaching max iterations, do not provide more tool calls to force final answer
                 is_last_step = (iteration == max_tool_iterations - 1)
                 tools_to_send = None if is_last_step else self.tools.get_schemas()
 
@@ -145,7 +187,8 @@ class Agent:
                 continue
             else:
                 # LLM provided final response
-                final_content = response.content or ""
+                raw_content = response.content or ""
+                final_content = format_raw_json_fallback(raw_content)
                 self.memory.add_message(session_id=session_id, role="assistant", content=final_content)
                 return {
                     "content": final_content,
@@ -157,7 +200,7 @@ class Agent:
         # If loop exited without clean assistant message, force one final synthesis
         try:
             final_resp = self.client.chat_completion(messages=messages, tools=None)
-            final_text = final_resp.content or "Execution completed."
+            final_text = format_raw_json_fallback(final_resp.content or "Execution completed.")
         except Exception:
             final_text = "Execution completed."
 
