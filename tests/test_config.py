@@ -3,7 +3,8 @@
 import os
 import tempfile
 import unittest
-from anamika.config import Config, fetch_available_models
+from unittest.mock import patch
+from anamika.config import Config, fetch_available_models, interactive_model_selector
 
 
 class TestConfig(unittest.TestCase):
@@ -34,6 +35,18 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg_reloaded.device_name, "OnePlus-Tab")
         self.assertEqual(cfg_reloaded.allowed_telegram_users, [7361027380])
         self.assertTrue(cfg_reloaded.is_configured)
+
+    def test_interactive_model_selector_number(self):
+        models = ["gpt-4o", "claude-3-7-sonnet-20250219", "deepseek-chat"]
+        with patch("builtins.input", return_value="1"):
+            chosen = interactive_model_selector(models)
+            self.assertEqual(chosen, "claude-3-7-sonnet-20250219")
+
+    def test_interactive_model_selector_custom(self):
+        models = ["gpt-4o", "deepseek-chat"]
+        with patch("builtins.input", return_value="custom-model-id"):
+            chosen = interactive_model_selector(models)
+            self.assertEqual(chosen, "custom-model-id")
 
 
 if __name__ == "__main__":

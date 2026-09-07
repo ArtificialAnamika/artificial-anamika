@@ -138,10 +138,117 @@ def fetch_available_models(endpoint: str, api_key: str, timeout: int = 8) -> Lis
                         models.append(item["id"])
                     elif isinstance(item, str):
                         models.append(item)
-            return sorted(models)
-    except Exception as e:
-        # print error for debugging if needed
+            return sorted(list(set(models)))
+    except Exception:
         return []
+
+
+def interactive_model_selector(available_models: List[str], default_model: str = "") -> str:
+    """Rich interactive model selector with pagination, keyword search, and numbered selection."""
+    if not available_models:
+        return default_model
+
+    # Prioritize Claude, GPT-4, DeepSeek, Llama
+    def model_priority(m: str) -> int:
+        m_low = m.lower()
+        if "claude-3-7" in m_low or "claude-3.7" in m_low or "sonnet-4" in m_low:
+            return 0
+        if "claude-3-5" in m_low or "claude-3.5" in m_low or "sonnet" in m_low:
+            return 1
+        if "gpt-4o" in m_low or "o3" in m_low or "o1" in m_low:
+            return 2
+        if "deepseek" in m_low:
+            return 3
+        if "llama-3" in m_low:
+            return 4
+        return 10
+
+    sorted_models = sorted(available_models, key=lambda x: (model_priority(x), x))
+    current_filter = ""
+    page = 0
+    page_size = 15
+
+    while True:
+        if current_filter:
+            filtered = [m for m in sorted_models if current_filter.lower() in m.lower()]
+        else:
+            filtered = sorted_models
+
+        if not filtered:
+            print(f"\n⚠️ No models matched filter '{current_filter}'.")
+            reset_choice = input("Press Enter to clear search filter or type new search: ").strip()
+            if reset_choice.startswith("/"):
+                current_filter = reset_choice[1:].strip()
+            elif reset_choice:
+                current_filter = reset_choice
+            else:
+                current_filter = ""
+            page = 0
+            continue
+
+        total_pages = max(1, (len(filtered) + page_size - 1) // page_size)
+        page = max(0, min(page, total_pages - 1))
+
+        start_idx = page * page_size
+        end_idx = min(start_idx + page_size, len(filtered))
+        current_slice = filtered[start_idx:end_idx]
+
+        filter_tag = f" matching '{current_filter}'" if current_filter else ""
+        print(f"\n📊 AVAILABLE MODELS ({len(filtered)} total{filter_tag} — Page {page + 1}/{total_pages}):")
+        print("-" * 65)
+
+        for i, m in enumerate(current_slice, start=start_idx + 1):
+            is_default = " \033[1;32m(Default)\033[0m" if m == default_model else ""
+            print(f"  [{i}] {m}{is_default}")
+
+        print("-" * 65)
+        print("💡 [Number] Select | [n] Next | [p] Prev | [/query] Search | [all] Show All")
+
+        user_inp = input("\nSelect model > ").strip()
+
+        if not user_inp:
+            if default_model and default_model in sorted_models:
+                return default_model
+            return filtered[0] if filtered else default_model
+
+        # If user picked a number
+        if user_inp.isdigit():
+            val = int(user_inp)
+            if 1 <= val <= len(filtered):
+                return filtered[val - 1]
+            else:
+                print(f"⚠️ Invalid number {val}. Please enter a number between 1 and {len(filtered)}.")
+                continue
+
+        low_inp = user_inp.lower()
+        if low_inp in ("n", "next"):
+            if page < total_pages - 1:
+                page += 1
+            else:
+                print("ℹ️ You are on the last page.")
+            continue
+        elif low_inp in ("p", "prev", "previous"):
+            if page > 0:
+                page -= 1
+            else:
+                print("ℹ️ You are on the first page.")
+            continue
+        elif low_inp == "all":
+            page_size = max(50, len(filtered))
+            page = 0
+            continue
+        elif low_inp.startswith("/") or low_inp.startswith("find ") or low_inp.startswith("search "):
+            q = user_inp[1:].strip() if low_inp.startswith("/") else user_inp.split(maxsplit=1)[1].strip()
+            current_filter = q
+            page = 0
+            continue
+        elif low_inp in ("clear", "reset"):
+            current_filter = ""
+            page = 0
+            continue
+        else:
+            # User typed custom or exact model name directly
+            return user_inp
 
 
 def run_setup_wizard(config_path: str = DEFAULT_CONFIG_PATH) -> Config:
@@ -195,31 +302,19 @@ def run_setup_wizard(config_path: str = DEFAULT_CONFIG_PATH) -> Config:
     input_key = input(key_prompt).strip()
     selected_key = input_key if input_key else current_key
 
-    # Step 3: Model Selection & Dynamic Fetch
+    # Step 3: Model Selection & Dynamic Fetch with Pagination & Search
     print("\n" + "-" * 60)
     print("📌 STEP 3: MODEL SELECTION")
     print(f"🔍 Probing endpoint '{selected_endpoint}' for available models...")
 
     available_models = fetch_available_models(selected_endpoint, selected_key)
-    selected_model = ""
+    current_model = cfg.get("model", selected_default_model or "claude-3-7-sonnet-20250219")
 
     if available_models:
-        print(f"\n✅ Successfully fetched {len(available_models)} model(s) from endpoint:")
-        for idx, m in enumerate(available_models[:20], start=1):
-            print(f"  [{idx}] {m}")
-        if len(available_models) > 20:
-            print(f"  ... and {len(available_models) - 20} more")
-
-        m_choice = input("\nSelect model number or type exact model ID: ").strip()
-        if m_choice.isdigit() and 1 <= int(m_choice) <= len(available_models):
-            selected_model = available_models[int(m_choice) - 1]
-        elif m_choice:
-            selected_model = m_choice
-        else:
-            selected_model = available_models[0]
+        print(f"✅ Successfully fetched {len(available_models)} models from provider.")
+        selected_model = interactive_model_selector(available_models, default_model=current_model)
     else:
         print("⚠️ Could not auto-fetch models list (Endpoint might restrict /v1/models).")
-        current_model = cfg.get("model", selected_default_model or "claude-3-7-sonnet-20250219")
         m_input = input(f"Enter Model Name [Default: {current_model}]: ").strip()
         selected_model = m_input if m_input else current_model
 
