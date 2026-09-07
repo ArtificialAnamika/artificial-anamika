@@ -14,14 +14,13 @@ from anamika.doctor import run_permission_doctor
 
 def print_banner():
     print(r"""
-    _         _   _  __ _      _       _        _                        _ _         
-   / \   _ __| |_(_)/ _(_) ___(_) __ _| |      / \   _ __   __ _ _ __ ___ (_) | ____ _ 
-  / _ \ | '__| __| | |_| |/ __| |/ _` | |     / _ \ | '_ \ / _` | '_ ` _ \| | |/ / _` |
- / ___ \| |  | |_| |  _| | (__| | (_| | |    / ___ \| | | | (_| | | | | | | |   < (_| |
-/_/   \_\_|   \__|_|_| |_|\___|_|\__,_|_|   /_/   \_\_| |_|\__,_|_| |_| |_|_|_|\_\__,_|
+   _              __  __ _ _         
+  /_\  _ _  __ _ |  \/  (_) |____ _  
+ / _ \| ' \/ _` || |\/| | | / / _` | 
+/_/ \_\_||_\__,_||_|  |_|_|_\_\__,_| 
     """)
-    print(f"  ✨ Autonomous Android OS AI Employee — Version {__version__}")
-    print("  " + "-" * 65)
+    print(f"  ✨ Autonomous Android AI Employee — v{__version__}")
+    print("  " + "-" * 42)
 
 
 def run_interactive_repl(config: Config):
@@ -30,19 +29,19 @@ def run_interactive_repl(config: Config):
     print(f"  📱 Device:   {config.device_name}")
     print(f"  🧠 Model:    {config.model}")
     print(f"  ⚡ Endpoint: {config.endpoint}")
-    print("  💡 Type 'exit', '/config', '/doctor', '/tools', or '/clear' to control session.\n")
+    print("  💡 Type 'exit', '/config', '/doctor', '/tools', or '/clear'\n")
 
     agent = Agent(config)
     session_id = "cli_session"
 
     while True:
         try:
-            user_prompt = input("\033[1;36mAnant ❯\033[0m ").strip()
+            user_prompt = input("\033[1;36mYou ❯\033[0m ").strip()
             if not user_prompt:
                 continue
 
             if user_prompt.lower() in ("exit", "quit", "q"):
-                print("\n👋 Goodbye Anant! Anamika session closed.\n")
+                print("\n👋 Goodbye! Anamika session closed.\n")
                 break
 
             if user_prompt.lower() == "/config":
