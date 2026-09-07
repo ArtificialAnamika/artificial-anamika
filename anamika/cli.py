@@ -9,6 +9,7 @@ from anamika.config import Config, run_setup_wizard, fetch_available_models, DEF
 from anamika.agent import Agent
 from anamika.tools import default_registry
 from anamika.telegram_bot import TelegramBot
+from anamika.doctor import run_permission_doctor
 
 
 def print_banner():
@@ -29,7 +30,7 @@ def run_interactive_repl(config: Config):
     print(f"  📱 Device:   {config.device_name}")
     print(f"  🧠 Model:    {config.model}")
     print(f"  ⚡ Endpoint: {config.endpoint}")
-    print("  💡 Type 'exit', '/config', '/tools', or '/clear' to control session.\n")
+    print("  💡 Type 'exit', '/config', '/doctor', '/tools', or '/clear' to control session.\n")
 
     agent = Agent(config)
     session_id = "cli_session"
@@ -48,6 +49,10 @@ def run_interactive_repl(config: Config):
                 run_setup_wizard()
                 config = Config()
                 agent = Agent(config)
+                continue
+
+            if user_prompt.lower() in ("/doctor", "/permissions"):
+                run_permission_doctor()
                 continue
 
             if user_prompt.lower() == "/clear":
@@ -108,7 +113,7 @@ def main():
         description="Artificial Anamika — Autonomous Android OS AI Employee",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("command", nargs="?", default="chat", choices=["chat", "config", "telegram", "models", "tools", "version"], help="Command to run (default: chat)")
+    parser.add_argument("command", nargs="?", default="chat", choices=["chat", "config", "telegram", "models", "tools", "doctor", "permissions", "version"], help="Command to run (default: chat)")
     parser.add_argument("-c", "--config", default=DEFAULT_CONFIG_PATH, help="Path to config.json")
     parser.add_argument("-t", "--telegram", action="store_true", help="Launch Telegram Bot daemon")
 
@@ -116,6 +121,10 @@ def main():
 
     if args.command == "version":
         print(f"Artificial Anamika v{__version__}")
+        return
+
+    if args.command in ("doctor", "permissions"):
+        run_permission_doctor()
         return
 
     if args.command == "config":
