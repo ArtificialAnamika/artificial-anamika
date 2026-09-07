@@ -8,9 +8,13 @@ APP_PACKAGES = {
     "whatsapp": "com.whatsapp",
     "whatsapp_business": "com.whatsapp.w4b",
     "youtube": "com.google.android.youtube",
+    "youtube_music": "com.google.android.apps.youtube.music",
     "chrome": "com.android.chrome",
+    "brave": "com.brave.browser",
+    "firefox": "org.mozilla.firefox",
     "settings": "com.android.settings",
     "telegram": "org.telegram.messenger",
+    "discord": "com.discord",
     "termux": "com.termux",
     "maps": "com.google.android.apps.maps",
     "gallery": "com.google.android.apps.photos",
@@ -20,7 +24,14 @@ APP_PACKAGES = {
     "gmail": "com.google.android.gm",
     "macrodroid": "com.arlosoft.macrodroid",
     "files": "com.google.android.documentsui",
-    "camera": "android.hardware.camera2"
+    "camera": "android.hardware.camera2",
+    "calculator": "com.google.android.calculator",
+    "clock": "com.google.android.deskclock",
+    "spotify": "com.spotify.music",
+    "netflix": "com.netflix.mediaclient",
+    "instagram": "com.instagram.android",
+    "twitter": "com.twitter.android",
+    "x": "com.twitter.android"
 }
 
 SETTINGS_INTENTS = {
@@ -32,7 +43,9 @@ SETTINGS_INTENTS = {
     "location": "android.settings.LOCATION_SOURCE_SETTINGS",
     "apps": "android.settings.APPLICATION_SETTINGS",
     "sound": "android.settings.SOUND_SETTINGS",
-    "date": "android.settings.DATE_SETTINGS"
+    "date": "android.settings.DATE_SETTINGS",
+    "accessibility": "android.settings.ACCESSIBILITY_SETTINGS",
+    "storage": "android.settings.INTERNAL_STORAGE_SETTINGS"
 }
 
 
@@ -44,22 +57,31 @@ def launch_app(app_name: str, package_name: str = "") -> Dict[str, Any]:
     if not pkg:
         pkg = APP_PACKAGES.get(clean_name, app_name.strip())
 
-    # Try monkey command first (most reliable on Android for launching main intent)
+    # Try monkey command first (most reliable on Android without knowing main activity)
     cmd = ["monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"]
     res = run_command(cmd, timeout=10)
     
     if res["success"]:
         return {"status": "success", "package": pkg, "message": f"Launched {app_name} ({pkg})"}
     
-    # Fallback to am start
+    # Fallback 1: am start with generic MainActivity
     res_am = run_command(["am", "start", "-n", f"{pkg}/.MainActivity"], timeout=10)
     if res_am["success"]:
         return {"status": "success", "package": pkg, "message": f"Started {pkg}"}
+
+    # Fallback 2: cmd package resolve-activity
+    res_cmd = run_command(["cmd", "package", "resolve-activity", "--brief", pkg], timeout=8)
+    if res_cmd["success"] and res_cmd["stdout"]:
+        lines = [l.strip() for l in res_cmd["stdout"].splitlines() if "/" in l.strip()]
+        if lines:
+            act = lines[0]
+            run_command(["am", "start", "-n", act], timeout=10)
+            return {"status": "success", "package": pkg, "activity": act, "message": f"Launched {pkg}"}
         
     return {
         "status": "error",
         "package": pkg,
-        "message": f"Failed to launch app. Error: {res['stderr'] or res_am['stderr']}"
+        "message": f"Failed to launch app '{app_name}'. Ensure app is installed on the phone."
     }
 
 
@@ -82,7 +104,7 @@ def open_url(url: str) -> Dict[str, Any]:
 
 
 def open_settings(setting_type: str = "main") -> Dict[str, Any]:
-    """Open specific Android Settings screen ('main', 'wifi', 'bluetooth', 'battery', 'display', 'location', 'apps', 'sound')."""
+    """Open specific Android Settings screen ('main', 'wifi', 'bluetooth', 'battery', 'display', 'location', 'apps', 'sound', 'storage')."""
     intent_action = SETTINGS_INTENTS.get(setting_type.lower().strip(), "android.settings.SETTINGS")
     res = run_command(["am", "start", "-a", intent_action], timeout=10)
     if res["success"]:

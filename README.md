@@ -29,6 +29,23 @@ curl -sSL https://raw.githubusercontent.com/ArtificialAnamika/artificial-anamika
 
 ---
 
+## 📲 Important Android Prerequisite: Termux:API App
+
+For Android hardware access (Torch, SMS, Camera, Battery), Android requires the **Termux:API Companion APK** to be installed.
+
+You can install it directly inside Termux with this 1-line command:
+
+```bash
+curl -sSL -o termux-api.apk "https://f-droid.org/repo/com.termux.api_51.apk" && termux-open termux-api.apk
+```
+
+Then run the built-in diagnostic doctor to verify and open permissions:
+```bash
+anamika doctor
+```
+
+---
+
 ## 🚀 Key Highlights & Philosophy
 
 * 🎯 **Native Android Hardware Execution:** Controls Battery, Flashlight / Torch, Screen Brightness, Volume levels, Vibration, Sensors (light, accelerometer), WiFi, GPS location, and Camera directly.
@@ -36,7 +53,8 @@ curl -sSL https://raw.githubusercontent.com/ArtificialAnamika/artificial-anamika
 * 🗣️ **UI, Speech & Alerts:** Native Android Text-to-Speech (TTS) voice, popup toast alerts, high-priority notifications, clipboard read/write, and dialog prompts.
 * 📱 **Android OS & Intent Automation:** Launches any app (`am start` / `monkey`), opens web URLs, opens system settings, plays audio, and downloads files.
 * 🤖 **24x7 Telegram Bot Daemon:** Connects to your dedicated Telegram bot (e.g. `@OnePlusTabHermes_bot`) with whitelist security, command routing, and direct camera photo uploads.
-* ⚙️ **Custom LLM Provider Wizard:** Interactive setup for Base URL / Endpoint, API Key, and **dynamic `/v1/models` discovery & picker**.
+* ⚙️ **Custom LLM Provider Wizard:** Interactive setup for Base URL / Endpoint, API Key, and **dynamic `/v1/models` discovery with pagination & keyword search (`/query`)**.
+* 🩺 **Built-in Permission Doctor:** One command (`anamika doctor`) to test all hardware permissions and trigger Android app settings.
 * 🪶 **Zero-Bloat / Pure Python:** Runs on standard Python 3 with zero heavy C/Rust dependencies (`tiktoken`, `playwright`, etc. are NOT required).
 
 ---
@@ -60,7 +78,7 @@ On first launch (or by running `anamika config`), Anamika guides you through a s
   [6] Custom Endpoint (Self-hosted / vLLM / Ollama / LiteLLM)
 
 📌 STEP 2: ENTER API KEY
-📌 STEP 3: DYNAMIC MODEL SELECTION (Auto-probes /v1/models)
+📌 STEP 3: DYNAMIC MODEL SELECTION (Auto-probes /v1/models with pagination & search)
 📌 STEP 4: TELEGRAM BOT TOKEN & USER WHITELIST
 📌 STEP 5: DEVICE IDENTIFIER (e.g. OnePlus-Tab)
 ```
@@ -73,6 +91,7 @@ On first launch (or by running `anamika config`), Anamika guides you through a s
 |---|---|
 | `anamika` | Start interactive terminal chat REPL |
 | `anamika config` | Launch interactive configuration wizard |
+| `anamika doctor` | Run permission diagnostics & Android APK helper |
 | `anamika telegram` | Start 24x7 Telegram Bot Daemon |
 | `anamika models` | Fetch & list available models from endpoint |
 | `anamika tools` | Display full catalog of registered Android tools |
@@ -116,6 +135,7 @@ artificial-anamika/
 │   ├── prompt.py              # SOUL & Hinglish technical employee persona
 │   ├── telegram_bot.py        # 24x7 Telegram long-polling daemon
 │   ├── cli.py                 # Terminal REPL & command dispatcher
+│   ├── doctor.py              # Diagnostic permission doctor & APK installer
 │   └── tools/                 # Native Android & System Tools
 │       ├── hardware.py        # Battery, Torch, Brightness, Volume, Sensors
 │       ├── telephony.py       # SMS reader/sender, OTPs, Call logs, Contacts
