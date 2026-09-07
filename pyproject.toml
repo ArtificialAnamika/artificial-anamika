@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "artificial-anamika"
+version = "1.0.0"
+description = "Ultra-Lightweight Autonomous AI Employee & Android Native Operating Agent for Termux & Beyond"
+readme = "README.md"
+authors = [
+    { name = "Artificial Anant & Anamika", email = "anant@artificialanant.cloud" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+anamika = "anamika.cli:main"
