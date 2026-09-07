@@ -44,7 +44,7 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     git reset --hard origin/main
 else
     rm -rf "$INSTALL_DIR"
-    git clone https://github.com/arificialanamika/artificial-anamika.git "$INSTALL_DIR"
+    git clone https://github.com/ArtificialAnamika/artificial-anamika.git "$INSTALL_DIR"
     cd "$INSTALL_DIR"
 fi
 

@@ -15,7 +15,7 @@ Standard Operating Procedure for installing, configuring, and verifying Artifici
 Run the following single command inside Termux:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/arificialanamika/artificial-anamika/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/ArtificialAnamika/artificial-anamika/main/install.sh | bash
 ```
 
 ---
