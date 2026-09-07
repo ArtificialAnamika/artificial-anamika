@@ -35,7 +35,7 @@ class Agent:
         facts = self.memory.get_all_facts()
         extra_context = ""
         if facts:
-            extra_context = "\n### 4. KNOWN DEVICE & SYSTEM FACTS\n"
+            extra_context = "\n### 5. KNOWN DEVICE & SYSTEM FACTS\n"
             for k, v in facts.items():
                 extra_context += f"- {k}: {v}\n"
 
@@ -46,7 +46,7 @@ class Agent:
         self,
         user_input: str,
         session_id: str = "default_session",
-        max_tool_iterations: int = 5
+        max_tool_iterations: int = 6
     ) -> Dict[str, Any]:
         """Processes user input through multi-turn agent reasoning and tool execution loop."""
         
@@ -67,9 +67,13 @@ class Agent:
 
         for iteration in range(max_tool_iterations):
             try:
+                # If approaching max iterations, do not provide more tool calls to force final answer
+                is_last_step = (iteration == max_tool_iterations - 1)
+                tools_to_send = None if is_last_step else self.tools.get_schemas()
+
                 response: LLMResponse = self.client.chat_completion(
                     messages=messages,
-                    tools=self.tools.get_schemas(),
+                    tools=tools_to_send,
                     temperature=0.7
                 )
             except Exception as e:
@@ -150,10 +154,16 @@ class Agent:
                     "error": None
                 }
 
-        # Max iterations reached
-        fallback_msg = "Completed multi-step execution. (Max tool iterations reached)."
+        # If loop exited without clean assistant message, force one final synthesis
+        try:
+            final_resp = self.client.chat_completion(messages=messages, tools=None)
+            final_text = final_resp.content or "Execution completed."
+        except Exception:
+            final_text = "Execution completed."
+
+        self.memory.add_message(session_id=session_id, role="assistant", content=final_text)
         return {
-            "content": fallback_msg,
+            "content": final_text,
             "tools_executed": executed_tools,
             "photos": captured_photos,
             "error": None
