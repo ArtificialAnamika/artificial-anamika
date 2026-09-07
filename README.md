@@ -84,14 +84,19 @@ On first launch (or by running `anamika config`), Anamika guides you through a s
 
 ---
 
-## 💻 CLI Commands & Usage
+## 💻 CLI Commands & Daemon Control
 
 | Command | Action |
 |---|---|
 | `anamika` | Start interactive terminal chat REPL |
+| `anamika telegram start` | Start 24x7 Telegram Bot Daemon in background (with wake lock) |
+| `anamika telegram stop` | Stop running background Telegram daemon |
+| `anamika telegram restart` | Restart background Telegram daemon |
+| `anamika telegram status` | Check if daemon is running, PID, and view recent logs |
+| `anamika telegram logs` | View daemon logs (`-f` to stream live) |
+| `anamika telegram run` | Run Telegram bot in foreground (debug mode) |
 | `anamika config` | Launch interactive configuration wizard |
 | `anamika doctor` | Run permission diagnostics & Android APK helper |
-| `anamika telegram` | Start 24x7 Telegram Bot Daemon |
 | `anamika models` | Fetch & list available models from endpoint |
 | `anamika tools` | Display full catalog of registered Android tools |
 | `anamika version` | Display installed version |

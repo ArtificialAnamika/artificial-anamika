@@ -10,6 +10,7 @@ from anamika.agent import Agent
 from anamika.tools import default_registry
 from anamika.telegram_bot import TelegramBot
 from anamika.doctor import run_permission_doctor
+from anamika.daemon import start_daemon, stop_daemon, restart_daemon, status_daemon, show_logs
 
 
 def print_banner():
@@ -112,9 +113,14 @@ def main():
         description="Artificial Anamika — Autonomous Android OS AI Employee",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("command", nargs="?", default="chat", choices=["chat", "config", "telegram", "models", "tools", "doctor", "permissions", "version"], help="Command to run (default: chat)")
+    parser.add_argument("command", nargs="?", default="chat", choices=[
+        "chat", "config", "telegram", "start", "stop", "restart", "status", "logs", "models", "tools", "doctor", "permissions", "version"
+    ], help="Command to run (default: chat)")
+    parser.add_argument("subcommand", nargs="?", default=None, help="Subcommand for telegram (start, stop, restart, status, logs, run)")
     parser.add_argument("-c", "--config", default=DEFAULT_CONFIG_PATH, help="Path to config.json")
     parser.add_argument("-t", "--telegram", action="store_true", help="Launch Telegram Bot daemon")
+    parser.add_argument("-f", "--follow", action="store_true", help="Follow logs live (with logs command)")
+    parser.add_argument("--foreground", action="store_true", help="Run Telegram bot in foreground")
 
     args = parser.parse_args()
 
@@ -134,6 +140,27 @@ def main():
         list_tools_cmd()
         return
 
+    # Direct daemon shortcut commands
+    if args.command == "start":
+        start_daemon(args.config)
+        return
+
+    if args.command == "stop":
+        stop_daemon()
+        return
+
+    if args.command == "restart":
+        restart_daemon(args.config)
+        return
+
+    if args.command == "status":
+        status_daemon()
+        return
+
+    if args.command == "logs":
+        show_logs(follow=args.follow)
+        return
+
     cfg = Config(args.config)
 
     # First time run: launch wizard if not configured
@@ -145,10 +172,30 @@ def main():
         list_models_cmd(cfg)
         return
 
+    # Telegram command routing: anamika telegram [start|stop|restart|status|logs|run]
     if args.command == "telegram" or args.telegram:
-        bot = TelegramBot(cfg)
-        bot.run()
-        return
+        sub = (args.subcommand or "").lower().strip()
+        if sub == "stop":
+            stop_daemon()
+            return
+        elif sub == "restart":
+            restart_daemon(args.config)
+            return
+        elif sub == "status":
+            status_daemon()
+            return
+        elif sub == "logs":
+            show_logs(follow=args.follow)
+            return
+        elif sub in ("run", "foreground") or args.foreground:
+            # Run foreground bot loop
+            bot = TelegramBot(cfg)
+            bot.run()
+            return
+        else:
+            # Default for `anamika telegram` or `anamika telegram start`: Start background daemon!
+            start_daemon(args.config)
+            return
 
     # Default: Interactive REPL
     run_interactive_repl(cfg)
