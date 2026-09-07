@@ -14,14 +14,11 @@ from anamika.daemon import start_daemon, stop_daemon, restart_daemon, status_dae
 
 
 def print_banner():
-    print(r"""
-   _              __  __ _ _         
-  /_\  _ _  __ _ |  \/  (_) |____ _  
- / _ \| ' \/ _` || |\/| | | / / _` | 
-/_/ \_\_||_\__,_||_|  |_|_|_\_\__,_| 
-    """)
-    print(f"  ✨ Autonomous Android AI Employee — v{__version__}")
-    print("  " + "-" * 42)
+    print(f"""
+\033[1;36m╔══════════════════════════════════════════════╗
+║   ⚡ ARTIFICIAL ANAMIKA (v{__version__})             ║
+║   Android OS Autonomous AI Employee          ║
+╚══════════════════════════════════════════════╝\033[0m""")
 
 
 def run_interactive_repl(config: Config):
@@ -188,12 +185,10 @@ def main():
             show_logs(follow=args.follow)
             return
         elif sub in ("run", "foreground") or args.foreground:
-            # Run foreground bot loop
             bot = TelegramBot(cfg)
             bot.run()
             return
         else:
-            # Default for `anamika telegram` or `anamika telegram start`: Start background daemon!
             start_daemon(args.config)
             return
 

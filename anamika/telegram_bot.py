@@ -73,7 +73,6 @@ class TelegramBot:
         if not text:
             return {}
 
-        # If text is too long, chunk it
         if len(text) > 4000:
             chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
             last_res = {}
@@ -90,7 +89,7 @@ class TelegramBot:
 
         res = self._request("sendMessage", payload)
         
-        # If markdown parsing failed on Telegram side, retry immediately as plain text!
+        # Fallback to plain text if markdown formatting failed
         if not res.get("ok") and parse_mode:
             print(f"⚠️ Markdown formatting error ({res.get('description')}). Retrying as plain text...")
             payload.pop("parse_mode", None)
@@ -168,20 +167,22 @@ class TelegramBot:
         # Quick Slash Commands
         if text.startswith("/start") or text.startswith("/help"):
             help_text = (
-                "✨ Artificial Anamika — Android AI Employee\n\n"
-                f"📱 Device: {self.config.device_name}\n"
-                f"🧠 Model:  {self.config.model}\n"
-                f"⚡ Endpoint: {self.config.endpoint}\n\n"
-                "Available Commands:\n"
+                "✨ Artificial Anamika — Android AI Employee\n"
+                "━" * 35 + "\n"
+                f"📱 Device:   {self.config.device_name}\n"
+                f"🧠 Model:    {self.config.model}\n"
+                f"⚡ Endpoint: {self.config.endpoint}\n"
+                "━" * 35 + "\n"
+                "📌 Quick Commands:\n"
                 "• /status — Device health, battery & WiFi info\n"
-                "• /battery — Detailed battery statistics\n"
+                "• /battery — Formatted battery metrics\n"
                 "• /torch on|off — Toggle flashlight\n"
-                "• /photo — Click photo and send here\n"
-                "• /sms — View recent SMS & OTPs\n"
-                "• /calls — View recent call logs\n"
-                "• /exec <cmd> — Run bash command in Termux\n"
-                "• /reset — Clear conversation history\n\n"
-                "💡 Natural Language: Aap mujhe seedhe Hinglish me bol sakte hain (e.g. 'Battery check karo', 'Torch on kar do', 'Recent call logs dikhao', 'SMS dikhao', 'WhatsApp kholo')."
+                "• /photo — Click photo and receive here\n"
+                "• /sms [N] — View formatted recent SMS & OTPs\n"
+                "• /calls [N] — View formatted call logs\n"
+                "• /exec <cmd> — Run shell command in Termux\n"
+                "• /reset — Clear conversation memory\n\n"
+                "💡 Natural Language: Aap mujhe seedhe Hinglish me bol sakte hain (e.g. 'Battery check karo', 'Torch on kar do', 'Recent call logs dikhao', 'Recent OTP dikhao', 'WhatsApp kholo')."
             )
             self.send_message(chat_id, help_text)
             return
@@ -191,19 +192,31 @@ class TelegramBot:
             bat = get_battery_status()
             wifi = get_wifi_info()
             status_msg = (
-                f"📊 Device Status — {self.config.device_name}\n\n"
-                f"🔋 Battery: {bat.get('percentage', 'N/A')}% ({bat.get('status', 'Unknown')})\n"
-                f"🌡️ Battery Temp: {bat.get('temperature', 'N/A')}°C\n"
-                f"📶 WiFi SSID: {wifi.get('ssid', 'Disconnected')}\n"
-                f"🌐 IP: {wifi.get('ip', 'N/A')}\n"
-                f"🤖 Active Model: {self.config.model}"
+                f"📊 DEVICE STATUS — {self.config.device_name}\n"
+                "━" * 35 + "\n"
+                f"🔋 Battery:     {bat.get('percentage', 'N/A')}% ({bat.get('status', 'Unknown')})\n"
+                f"🌡️ Temp:        {bat.get('temperature', 'N/A')}°C\n"
+                f"📶 WiFi SSID:   {wifi.get('ssid', 'Disconnected')}\n"
+                f"🌐 IP Address:  {wifi.get('ip', 'N/A')}\n"
+                f"🤖 AI Model:    {self.config.model}\n"
+                "━" * 35
             )
             self.send_message(chat_id, status_msg)
             return
 
         if text.startswith("/battery"):
             bat = get_battery_status()
-            self.send_message(chat_id, f"🔋 Battery:\n{json.dumps(bat, indent=2)}")
+            bat_text = (
+                f"🔋 BATTERY STATUS — {self.config.device_name}\n"
+                "━" * 35 + "\n"
+                f"• Level:       {bat.get('percentage', 'N/A')}%\n"
+                f"• Status:      {str(bat.get('status', 'Unknown')).capitalize()}\n"
+                f"• Health:      {str(bat.get('health', 'Unknown')).capitalize()}\n"
+                f"• Temperature: {bat.get('temperature', 'N/A')}°C\n"
+                f"• Plugged:     {str(bat.get('plugged', 'UNPLUGGED')).capitalize()}\n"
+                "━" * 35
+            )
+            self.send_message(chat_id, bat_text)
             return
 
         if text.startswith("/torch"):
@@ -226,14 +239,24 @@ class TelegramBot:
 
         if text.startswith("/sms"):
             self.send_chat_action(chat_id, "typing")
-            sms_res = list_sms(limit=5)
-            self.send_message(chat_id, f"📩 Recent SMS:\n{json.dumps(sms_res, indent=2)}")
+            parts = text.split()
+            lim = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 5
+            sms_res = list_sms(limit=lim)
+            if sms_res.get("formatted_text"):
+                self.send_message(chat_id, sms_res["formatted_text"])
+            else:
+                self.send_message(chat_id, sms_res.get("message", "No SMS found."))
             return
 
         if text.startswith("/calls"):
             self.send_chat_action(chat_id, "typing")
-            calls_res = get_call_logs(limit=5)
-            self.send_message(chat_id, f"📞 Recent Calls:\n{json.dumps(calls_res, indent=2)}")
+            parts = text.split()
+            lim = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 5
+            calls_res = get_call_logs(limit=lim)
+            if calls_res.get("formatted_text"):
+                self.send_message(chat_id, calls_res["formatted_text"])
+            else:
+                self.send_message(chat_id, calls_res.get("message", "No call logs found."))
             return
 
         if text.startswith("/exec"):

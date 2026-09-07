@@ -8,18 +8,18 @@ from typing import Dict, Any, List, Union
 from anamika.tools.base import run_command
 
 CALL_TYPE_MAP = {
-    1: "INCOMING",
-    2: "OUTGOING",
-    3: "MISSED",
-    4: "VOICEMAIL",
-    5: "REJECTED",
-    6: "BLOCKED",
-    "1": "INCOMING",
-    "2": "OUTGOING",
-    "3": "MISSED",
-    "4": "VOICEMAIL",
-    "5": "REJECTED",
-    "6": "BLOCKED"
+    1: "INCOMING 🟢",
+    2: "OUTGOING 🔵",
+    3: "MISSED 🔴",
+    4: "VOICEMAIL 🟡",
+    5: "REJECTED 🟠",
+    6: "BLOCKED ⛔",
+    "1": "INCOMING 🟢",
+    "2": "OUTGOING 🔵",
+    "3": "MISSED 🔴",
+    "4": "VOICEMAIL 🟡",
+    "5": "REJECTED 🟠",
+    "6": "BLOCKED ⛔"
 }
 
 
@@ -27,12 +27,23 @@ def _format_timestamp(ts_val: Any) -> str:
     """Helper to format epoch timestamps (seconds or milliseconds) into readable string."""
     try:
         ts_float = float(ts_val)
-        # If milliseconds
         if ts_float > 1e11:
             ts_float /= 1000.0
         return datetime.fromtimestamp(ts_float).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return str(ts_val)
+
+
+def _format_duration(seconds: Any) -> str:
+    """Helper to format call duration into human readable minutes/seconds."""
+    try:
+        sec = int(seconds)
+        if sec < 60:
+            return f"{sec}s"
+        m, s = divmod(sec, 60)
+        return f"{m}m {s}s"
+    except Exception:
+        return f"{seconds}s"
 
 
 def list_sms(limit: Union[int, str] = 10, offset: Union[int, str] = 0, query: str = "") -> Dict[str, Any]:
@@ -55,13 +66,13 @@ def list_sms(limit: Union[int, str] = 10, offset: Union[int, str] = 0, query: st
             for msg in messages:
                 body = msg.get("body", "")
                 number = msg.get("number", "")
-                received = msg.get("received", "")
+                received = _format_timestamp(msg.get("received", ""))
                 
                 # Filter by query if provided
                 if query and (query.lower() not in body.lower() and query not in number):
                     continue
                 
-                # Try finding potential OTP in body
+                # Extract potential OTPs
                 potential_otps = []
                 if any(w in body.lower() for w in ("otp", "code", "verification", "password", "pin", "login")):
                     matches = otp_pattern.findall(body)
@@ -69,16 +80,30 @@ def list_sms(limit: Union[int, str] = 10, offset: Union[int, str] = 0, query: st
 
                 parsed.append({
                     "sender": number,
-                    "received": received,
+                    "date": received,
                     "body": body,
                     "read": msg.get("read", False),
                     "potential_otps": potential_otps
                 })
 
+            # Build beautiful formatted text for humans & LLM
+            formatted_lines = [f"📩 RECENT SMS (Total: {len(parsed)}):", "━" * 40]
+            for idx, m in enumerate(parsed, start=1):
+                otp_str = f"\n   🔑 OTP Code: {', '.join(m['potential_otps'])}" if m['potential_otps'] else ""
+                formatted_lines.append(
+                    f"{idx}. 👤 From: {m['sender']}\n"
+                    f"   ⏰ Date: {m['date']}{otp_str}\n"
+                    f"   💬 Message: {m['body']}\n"
+                    + "━" * 40
+                )
+
+            formatted_summary = "\n".join(formatted_lines)
+
             return {
                 "status": "success",
                 "count": len(parsed),
-                "messages": parsed
+                "messages": parsed,
+                "formatted_text": formatted_summary
             }
         except Exception as e:
             return {"status": "error", "message": f"Failed to parse SMS: {e}", "raw": res["stdout"]}
@@ -113,72 +138,79 @@ def get_call_logs(limit: Union[int, str] = 10, offset: Union[int, str] = 0) -> D
     cmd = ["termux-telephony-call-log", "-l", str(lim), "-o", str(off)]
     res = run_command(cmd, timeout=15)
     
+    raw_calls = []
     if res["success"] and res["stdout"]:
         try:
-            raw_calls = json.loads(res["stdout"])
-            if isinstance(raw_calls, list) and len(raw_calls) > 0:
-                formatted_calls = []
-                for c in raw_calls:
-                    raw_type = c.get("type", "")
-                    readable_type = CALL_TYPE_MAP.get(raw_type, str(raw_type))
-                    formatted_calls.append({
-                        "name": c.get("name") or "Unknown / Unsaved",
-                        "phone_number": c.get("phone_number") or c.get("number", ""),
-                        "type": readable_type,
-                        "date": _format_timestamp(c.get("date", "")),
-                        "duration_seconds": c.get("duration", 0)
-                    })
-                return {
-                    "status": "success",
-                    "count": len(formatted_calls),
-                    "calls": formatted_calls
-                }
-            elif isinstance(raw_calls, list) and len(raw_calls) == 0:
-                # Fall through to content query fallback
-                pass
+            parsed_json = json.loads(res["stdout"])
+            if isinstance(parsed_json, list) and len(parsed_json) > 0:
+                raw_calls = parsed_json
         except Exception:
             pass
 
-    # 2. Fallback Method: Direct Android Content Provider Query
-    content_cmd = [
-        "content", "query",
-        "--uri", "content://call_log/calls",
-        "--projection", "number:name:date:duration:type",
-        "--sort", "date DESC"
-    ]
-    res_content = run_command(content_cmd, timeout=10)
-    if res_content["success"] and res_content["stdout"]:
-        lines = res_content["stdout"].splitlines()
-        content_calls = []
-        for line in lines[:lim]:
-            if "Row:" in line:
-                # Row: 0 name=John, number=123, date=1700000000000, duration=45, type=1
-                item = {}
-                for part in line.split(","):
-                    if "=" in part:
-                        k, v = part.split("=", 1)
-                        item[k.strip().replace("Row: ", "")] = v.strip()
-                
-                raw_type = item.get("type", "1")
-                content_calls.append({
-                    "name": item.get("name") or "Unknown / Unsaved",
-                    "phone_number": item.get("number", ""),
-                    "type": CALL_TYPE_MAP.get(raw_type, "CALL"),
-                    "date": _format_timestamp(item.get("date", "")),
-                    "duration_seconds": int(item.get("duration", 0)) if item.get("duration", "").isdigit() else 0
-                })
-        if content_calls:
-            return {
-                "status": "success",
-                "count": len(content_calls),
-                "calls": content_calls
-            }
+    formatted_calls = []
+
+    if raw_calls:
+        for c in raw_calls:
+            raw_type = c.get("type", "")
+            readable_type = CALL_TYPE_MAP.get(raw_type, str(raw_type))
+            formatted_calls.append({
+                "name": c.get("name") or "Unknown / Unsaved",
+                "phone_number": c.get("phone_number") or c.get("number", ""),
+                "type": readable_type,
+                "date": _format_timestamp(c.get("date", "")),
+                "duration": _format_duration(c.get("duration", 0))
+            })
+    else:
+        # 2. Fallback Method: Direct Android Content Provider Query
+        content_cmd = [
+            "content", "query",
+            "--uri", "content://call_log/calls",
+            "--projection", "number:name:date:duration:type",
+            "--sort", "date DESC"
+        ]
+        res_content = run_command(content_cmd, timeout=10)
+        if res_content["success"] and res_content["stdout"]:
+            lines = res_content["stdout"].splitlines()
+            for line in lines[:lim]:
+                if "Row:" in line:
+                    item = {}
+                    for part in line.split(","):
+                        if "=" in part:
+                            k, v = part.split("=", 1)
+                            item[k.strip().replace("Row: ", "")] = v.strip()
+                    
+                    raw_type = item.get("type", "1")
+                    formatted_calls.append({
+                        "name": item.get("name") or "Unknown / Unsaved",
+                        "phone_number": item.get("number", ""),
+                        "type": CALL_TYPE_MAP.get(raw_type, "CALL"),
+                        "date": _format_timestamp(item.get("date", "")),
+                        "duration": _format_duration(item.get("duration", 0))
+                    })
+
+    if formatted_calls:
+        # Build formatted summary
+        formatted_lines = [f"📞 RECENT CALL LOGS (Total: {len(formatted_calls)}):", "━" * 40]
+        for idx, c in enumerate(formatted_calls, start=1):
+            formatted_lines.append(
+                f"{idx}. 👤 {c['name']} ({c['phone_number']})\n"
+                f"   📞 {c['type']} | ⏱️ {c['duration']}\n"
+                f"   ⏰ {c['date']}\n"
+                + "━" * 40
+            )
+
+        return {
+            "status": "success",
+            "count": len(formatted_calls),
+            "calls": formatted_calls,
+            "formatted_text": "\n".join(formatted_lines)
+        }
 
     return {
         "status": "success",
         "count": 0,
         "calls": [],
-        "message": "No call logs found. If you have recent calls, please ensure 'Call logs' / 'Phone' permission is granted to Termux:API app in Android Settings."
+        "message": "No call logs found on this device. (Ensure Call Logs & Phone permissions are granted to Termux:API app)."
     }
 
 

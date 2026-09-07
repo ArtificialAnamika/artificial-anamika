@@ -8,10 +8,10 @@
 [![Custom Endpoints](https://img.shields.io/badge/LLM-Mandal%20%7C%20Claude%20%7C%20OpenAI%20%7C%20Groq%20%7C%20DeepSeek-purple.svg)](https://api.mandalworkforce.com)
 
 ```text
-   _              __  __ _ _         
-  /_\  _ _  __ _ |  \/  (_) |____ _  
- / _ \| ' \/ _` || |\/| | | / / _` | 
-/_/ \_\_||_\__,_||_|  |_|_|_\_\__,_| 
+╔══════════════════════════════════════════════╗
+║   ⚡ ARTIFICIAL ANAMIKA                      ║
+║   Android OS Autonomous AI Employee          ║
+╚══════════════════════════════════════════════╝
 ```
 
 **Artificial Anamika** is an ultra-lightweight, autonomous AI employee and system architect designed to run **natively inside Android Termux without heavy PRoot containers**. It bridges state-of-the-art Large Language Models (Claude 3.7 Sonnet, OpenAI, DeepSeek, custom API endpoints) directly to your Android device's hardware, telephony, camera, sensors, and operating system via real-time tool calling.

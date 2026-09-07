@@ -255,10 +255,10 @@ def run_setup_wizard(config_path: str = DEFAULT_CONFIG_PATH) -> Config:
     """Interactive CLI setup wizard to configure Endpoint, API Key, Model & Telegram."""
     cfg = Config(config_path)
 
-    print("\n" + "=" * 60)
-    print("  ✨ ARTIFICIAL ANAMIKA (ANAMIKA AI) — SETUP WIZARD")
-    print("  Ultra-Lightweight Autonomous Android OS AI Employee")
-    print("=" * 60 + "\n")
+    print("\n\033[1;36m╔══════════════════════════════════════════════╗")
+    print("║   ✨ ARTIFICIAL ANAMIKA — SETUP WIZARD       ║")
+    print("║   Autonomous Android OS AI Employee          ║")
+    print("╚══════════════════════════════════════════════╝\033[0m\n")
 
     # Step 1: Endpoint selection
     print("📌 STEP 1: SELECT OR ENTER LLM ENDPOINT URL")
