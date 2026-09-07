@@ -24,9 +24,16 @@ CALL_TYPE_MAP = {
 
 
 def _format_timestamp(ts_val: Any) -> str:
-    """Helper to format epoch timestamps (seconds or milliseconds) into readable string."""
+    """Helper to format epoch timestamps (seconds or milliseconds) or date strings into readable string."""
+    if not ts_val:
+        return "Recent"
     try:
-        ts_float = float(ts_val)
+        ts_str = str(ts_val).strip()
+        # If already formatted string like '2026-09-07 18:20:00'
+        if "-" in ts_str and ":" in ts_str:
+            return ts_str.split(".")[0]
+        
+        ts_float = float(ts_str)
         if ts_float > 1e11:
             ts_float /= 1000.0
         return datetime.fromtimestamp(ts_float).strftime("%Y-%m-%d %H:%M:%S")
@@ -54,63 +61,102 @@ def list_sms(limit: Union[int, str] = 10, offset: Union[int, str] = 0, query: st
     except Exception:
         lim, off = 10, 0
 
+    parsed_messages = []
+    otp_pattern = re.compile(r'\b(?:\d{4,8}|[A-Z0-9]{5,8})\b')
+
+    # 1. Primary Method: termux-sms-list
     cmd = ["termux-sms-list", "-l", str(lim), "-o", str(off)]
     res = run_command(cmd, timeout=15)
     
     if res["success"] and res["stdout"]:
         try:
-            messages = json.loads(res["stdout"])
-            parsed = []
-            otp_pattern = re.compile(r'\b(?:\d{4,8}|[A-Z0-9]{5,8})\b')
-            
-            for msg in messages:
-                body = msg.get("body", "")
-                number = msg.get("number", "")
-                received = _format_timestamp(msg.get("received", ""))
-                
-                # Filter by query if provided
-                if query and (query.lower() not in body.lower() and query not in number):
-                    continue
-                
-                # Extract potential OTPs
-                potential_otps = []
-                if any(w in body.lower() for w in ("otp", "code", "verification", "password", "pin", "login")):
-                    matches = otp_pattern.findall(body)
-                    potential_otps = [m for m in matches if any(char.isdigit() for char in m)]
+            raw_data = json.loads(res["stdout"])
+            if isinstance(raw_data, list) and len(raw_data) > 0:
+                for msg in raw_data:
+                    sender = msg.get("number") or msg.get("address") or msg.get("sender") or msg.get("from") or "Unknown"
+                    body = msg.get("body") or msg.get("message") or msg.get("text") or ""
+                    date_val = msg.get("received") or msg.get("date") or msg.get("time") or msg.get("timestamp") or ""
 
-                parsed.append({
-                    "sender": number,
-                    "date": received,
-                    "body": body,
-                    "read": msg.get("read", False),
-                    "potential_otps": potential_otps
-                })
+                    if query and (query.lower() not in body.lower() and query.lower() not in str(sender).lower()):
+                        continue
 
-            # Build beautiful formatted text for humans & LLM
-            formatted_lines = [f"📩 RECENT SMS (Total: {len(parsed)}):", "━" * 40]
-            for idx, m in enumerate(parsed, start=1):
-                otp_str = f"\n   🔑 OTP Code: {', '.join(m['potential_otps'])}" if m['potential_otps'] else ""
-                formatted_lines.append(
-                    f"{idx}. 👤 From: {m['sender']}\n"
-                    f"   ⏰ Date: {m['date']}{otp_str}\n"
-                    f"   💬 Message: {m['body']}\n"
-                    + "━" * 40
-                )
+                    potential_otps = []
+                    if any(w in body.lower() for w in ("otp", "code", "verification", "password", "pin", "login")):
+                        matches = otp_pattern.findall(body)
+                        potential_otps = [m for m in matches if any(char.isdigit() for char in m)]
 
-            formatted_summary = "\n".join(formatted_lines)
+                    parsed_messages.append({
+                        "sender": str(sender),
+                        "date": _format_timestamp(date_val),
+                        "body": body,
+                        "read": msg.get("read", False),
+                        "potential_otps": potential_otps
+                    })
+        except Exception:
+            pass
 
-            return {
-                "status": "success",
-                "count": len(parsed),
-                "messages": parsed,
-                "formatted_text": formatted_summary
-            }
-        except Exception as e:
-            return {"status": "error", "message": f"Failed to parse SMS: {e}", "raw": res["stdout"]}
+    # 2. Fallback Method: Direct Android Content Provider Query
+    if not parsed_messages:
+        content_cmd = [
+            "content", "query",
+            "--uri", "content://sms/inbox",
+            "--projection", "address:date:body:read",
+            "--sort", "date DESC"
+        ]
+        res_content = run_command(content_cmd, timeout=10)
+        if res_content["success"] and res_content["stdout"]:
+            lines = res_content["stdout"].splitlines()
+            for line in lines[:lim]:
+                if "Row:" in line:
+                    item = {}
+                    for part in line.split(","):
+                        if "=" in part:
+                            k, v = part.split("=", 1)
+                            item[k.strip().replace("Row: ", "")] = v.strip()
+                    
+                    sender = item.get("address", "Unknown")
+                    body = item.get("body", "")
+                    date_val = item.get("date", "")
+
+                    if query and (query.lower() not in body.lower() and query.lower() not in str(sender).lower()):
+                        continue
+
+                    potential_otps = []
+                    if any(w in body.lower() for w in ("otp", "code", "verification", "password", "pin", "login")):
+                        matches = otp_pattern.findall(body)
+                        potential_otps = [m for m in matches if any(char.isdigit() for char in m)]
+
+                    parsed_messages.append({
+                        "sender": str(sender),
+                        "date": _format_timestamp(date_val),
+                        "body": body,
+                        "read": item.get("read", "1") == "1",
+                        "potential_otps": potential_otps
+                    })
+
+    if parsed_messages:
+        formatted_lines = [f"📩 RECENT SMS (Total: {len(parsed_messages)}):", "━" * 40]
+        for idx, m in enumerate(parsed_messages, start=1):
+            otp_str = f"\n   🔑 OTP Code: {', '.join(m['potential_otps'])}" if m['potential_otps'] else ""
+            formatted_lines.append(
+                f"{idx}. 👤 From: {m['sender']}\n"
+                f"   ⏰ Date: {m['date']}{otp_str}\n"
+                f"   💬 Message: {m['body']}\n"
+                + "━" * 40
+            )
+
+        return {
+            "status": "success",
+            "count": len(parsed_messages),
+            "messages": parsed_messages,
+            "formatted_text": "\n".join(formatted_lines)
+        }
 
     return {
-        "status": "error",
-        "message": res["stderr"] or "Failed to list SMS. Ensure SMS permission is granted to Termux:API app."
+        "status": "success",
+        "count": 0,
+        "messages": [],
+        "message": "No SMS found on device. (Ensure SMS permission is granted to Termux:API app in Android Settings)."
     }
 
 
@@ -189,7 +235,6 @@ def get_call_logs(limit: Union[int, str] = 10, offset: Union[int, str] = 0) -> D
                     })
 
     if formatted_calls:
-        # Build formatted summary
         formatted_lines = [f"📞 RECENT CALL LOGS (Total: {len(formatted_calls)}):", "━" * 40]
         for idx, c in enumerate(formatted_calls, start=1):
             formatted_lines.append(
